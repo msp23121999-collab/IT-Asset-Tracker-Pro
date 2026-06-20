@@ -1,0 +1,60 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Function to check if the user is an admin
+    function isAdmin() {
+      return request.auth != null && 
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['super_admin', 'it_admin'];
+    }
+
+    // Function to check if the user is a super admin
+    function isSuperAdmin() {
+      return request.auth != null && 
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'super_admin';
+    }
+
+    // --- USERS COLLECTION ---
+    match /users/{userId} {
+      // Users can read/write their own profile
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+      // Admins can read/write all profiles
+      allow read, write: if isAdmin();
+    }
+
+    // --- ASSETS COLLECTION ---
+    match /assets/{assetId} {
+      // Employees can only read assets assigned specifically to them
+      allow read: if request.auth != null && resource.data.assignedTo == request.auth.uid;
+      // Admins can read/write all assets
+      allow read, write: if isAdmin();
+    }
+
+    // --- AUDIT LOGS ---
+    match /audit_logs/{logId} {
+      // Anyone logged in can WRITE to audit logs (for the unauthorized trigger)
+      allow write: if request.auth != null;
+      // Only Admins can READ audit logs
+      allow read: if isAdmin();
+    }
+
+    // --- SYSTEM SETTINGS ---
+    match /system_settings/{document=**} {
+      allow read, write: if isSuperAdmin();
+    }
+
+    // --- NOTIFICATIONS COLLECTION ---
+    match /notifications/{notificationId} {
+      // Users can read and update (mark read) their own notifications
+      allow read, update: if request.auth != null && resource.data.recipientUid == request.auth.uid;
+      // Admins can read/write all
+      allow read, write: if isAdmin();
+    }
+
+    // --- ALL OTHER COLLECTIONS (Default deny for non-admins) ---
+    match /{document=**} {
+      // Catch-all: Admins can do anything, others can do nothing
+      allow read, write: if isAdmin();
+    }
+  }
+}
